@@ -1,0 +1,33 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserdata
+*.xcworkspace
+!*.xcodeproj/project.pbxproj
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.hmap
+*.ipa
+
+# Swift Package Manager
+.build/
+Packages/
+
+# CocoaPods
+Pods/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# User-specific files
+xcuserdata/
+PROMPT.md
+
+# EdgeImpulse library (added separately)
+edge-impulse-sdk/
+model-parameters/
+tflite-model/
