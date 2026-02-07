@@ -8,6 +8,7 @@ class CameraManager: NSObject, ObservableObject {
     @Published var isRunning: Bool = false
     @Published var fps: Int = 0
     @Published var cameraPermissionGranted: Bool = false
+    @Published var currentPosition: AVCaptureDevice.Position = .front
 
     private let captureSession = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
@@ -92,7 +93,17 @@ class CameraManager: NSObject, ObservableObject {
         }
 
         captureSession.commitConfiguration()
+
+        DispatchQueue.main.async {
+            self.currentPosition = position
+        }
         print("Camera setup complete - Input size: \(wrapper.getInputWidth())x\(wrapper.getInputHeight())")
+    }
+
+    /// Switch between front and back cameras
+    func flipCamera() {
+        let newPosition: AVCaptureDevice.Position = (currentPosition == .front) ? .back : .front
+        setupCamera(position: newPosition)
     }
 
     func start() {

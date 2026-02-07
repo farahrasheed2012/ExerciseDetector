@@ -4,31 +4,30 @@ import AVFoundation
 struct CameraView: UIViewRepresentable {
     let session: AVCaptureSession
 
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView(frame: .zero)
+    func makeUIView(context: Context) -> CameraPreviewUIView {
+        let view = CameraPreviewUIView()
         view.backgroundColor = .black
-
-        let previewLayer = AVCaptureVideoPreviewLayer(session: session)
-        previewLayer.videoGravity = .resizeAspectFill
-        previewLayer.connection?.videoOrientation = .portrait
-
-        view.layer.addSublayer(previewLayer)
-        context.coordinator.previewLayer = previewLayer
-
+        view.previewLayer.session = session
+        view.previewLayer.videoGravity = .resizeAspectFill
+        view.previewLayer.connection?.videoOrientation = .portrait
         return view
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {
-        DispatchQueue.main.async {
-            context.coordinator.previewLayer?.frame = uiView.bounds
-        }
+    func updateUIView(_ uiView: CameraPreviewUIView, context: Context) {
+        // Session is already bound; layout handled by layoutSubviews
+    }
+}
+
+/// Custom UIView subclass that keeps the AVCaptureVideoPreviewLayer
+/// sized correctly via layoutSubviews, which fires reliably on every
+/// frame/orientation change -- unlike updateUIView.
+class CameraPreviewUIView: UIView {
+
+    override class var layerClass: AnyClass {
+        AVCaptureVideoPreviewLayer.self
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    class Coordinator {
-        var previewLayer: AVCaptureVideoPreviewLayer?
+    var previewLayer: AVCaptureVideoPreviewLayer {
+        layer as! AVCaptureVideoPreviewLayer
     }
 }

@@ -116,6 +116,13 @@ struct ContentView: View {
             .onDisappear {
                 cameraManager.stop()
             }
+            .onChange(of: cameraManager.cameraPermissionGranted) { granted in
+                // Handle first-launch: permission is granted after onAppear already fired
+                if granted {
+                    cameraManager.setupCamera()
+                    cameraManager.start()
+                }
+            }
             .onChange(of: cameraManager.currentExercise) { exercise in
                 workoutManager.processDetection(exercise, confidence: cameraManager.confidence)
             }
@@ -132,13 +139,23 @@ struct ContentView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .foregroundColor(.white)
-                            .padding(8)
-                            .background(.ultraThinMaterial, in: Circle())
+                    HStack(spacing: 12) {
+                        Button {
+                            cameraManager.flipCamera()
+                        } label: {
+                            Image(systemName: "camera.rotate.fill")
+                                .foregroundColor(.white)
+                                .padding(8)
+                                .background(.ultraThinMaterial, in: Circle())
+                        }
+                        Button {
+                            showingSettings = true
+                        } label: {
+                            Image(systemName: "gearshape.fill")
+                                .foregroundColor(.white)
+                                .padding(8)
+                                .background(.ultraThinMaterial, in: Circle())
+                        }
                     }
                 }
             }
