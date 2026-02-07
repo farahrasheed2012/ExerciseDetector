@@ -6,14 +6,13 @@
 
 #import <CoreGraphics/CoreGraphics.h>
 #import <Accelerate/Accelerate.h>
-#import <UIKit/UIKit.h>
 
 @implementation EdgeImpulseWrapper
 
 - (instancetype)init {
     self = [super init];
     if (self) {
-        NSLog(@"EdgeImpulse wrapper initialized");
+        NSLog(@"EdgeImpulse wrapper initialized (input: %dx%d)", EI_CLASSIFIER_INPUT_WIDTH, EI_CLASSIFIER_INPUT_HEIGHT);
     }
     return self;
 }
@@ -30,77 +29,92 @@
 
     CVPixelBufferLockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
 
-    int targetWidth = [self getInputWidth];
-    int targetHeight = [self getInputHeight];
+    int targetWidth = EI_CLASSIFIER_INPUT_WIDTH;   // 220
+    int targetHeight = EI_CLASSIFIER_INPUT_HEIGHT;  // 220
 
-    // Convert CVPixelBuffer to UIImage
-    CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixelBuffer];
-    CIContext *context = [CIContext contextWithOptions:nil];
-    CGImageRef cgImage = [context createCGImage:ciImage fromRect:ciImage.extent];
-    UIImage *image = [UIImage imageWithCGImage:cgImage];
-    CGImageRelease(cgImage);
+    // --- Get source pixel data from CVPixelBuffer (BGRA format) ---
+    size_t srcWidth = CVPixelBufferGetWidth(pixelBuffer);
+    size_t srcHeight = CVPixelBufferGetHeight(pixelBuffer);
+    void *baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer);
+    size_t srcBytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer);
 
-    // Resize to model input size
-    UIGraphicsBeginImageContextWithOptions(CGSizeMake(targetWidth, targetHeight), YES, 1.0);
-    [image drawInRect:CGRectMake(0, 0, targetWidth, targetHeight)];
-    UIImage *resizedImage = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-
-    // Convert to RGB pixel array
-    CGImageRef resizedCGImage = resizedImage.CGImage;
-    size_t bytesPerPixel = 4;
-    size_t bytesPerRow = bytesPerPixel * targetWidth;
-
-    unsigned char *rawData = (unsigned char *)malloc(targetHeight * targetWidth * bytesPerPixel);
-
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    CGContextRef bitmapContext = CGBitmapContextCreate(
-        rawData,
-        targetWidth,
-        targetHeight,
-        8,
-        bytesPerRow,
-        colorSpace,
-        kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big
-    );
-
-    CGContextDrawImage(bitmapContext, CGRectMake(0, 0, targetWidth, targetHeight), resizedCGImage);
-    CGContextRelease(bitmapContext);
-    CGColorSpaceRelease(colorSpace);
-
-    // Extract RGB values (skip alpha channel)
-    size_t featureCount = targetWidth * targetHeight * 3;
-    float *features = (float *)malloc(featureCount * sizeof(float));
-
-    for (int i = 0; i < targetWidth * targetHeight; i++) {
-        features[i * 3 + 0] = rawData[i * 4 + 0] / 255.0f; // R
-        features[i * 3 + 1] = rawData[i * 4 + 1] / 255.0f; // G
-        features[i * 3 + 2] = rawData[i * 4 + 2] / 255.0f; // B
+    if (!baseAddress) {
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
+        return @{};
     }
 
-    free(rawData);
+    // --- Create CGImage from the BGRA pixel buffer ---
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
 
-    // Create EdgeImpulse signal
+    CGContextRef srcCtx = CGBitmapContextCreate(
+        baseAddress, srcWidth, srcHeight, 8, srcBytesPerRow, colorSpace,
+        kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst  // BGRA on little-endian
+    );
+
+    if (!srcCtx) {
+        CGColorSpaceRelease(colorSpace);
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
+        return @{};
+    }
+
+    CGImageRef srcImage = CGBitmapContextCreateImage(srcCtx);
+    CGContextRelease(srcCtx);
+
+    // --- Resize to model input dimensions (RGBA byte order) ---
+    size_t dstBytesPerRow = 4 * targetWidth;
+    unsigned char *resizedData = (unsigned char *)calloc(targetHeight * dstBytesPerRow, 1);
+
+    CGContextRef dstCtx = CGBitmapContextCreate(
+        resizedData, targetWidth, targetHeight, 8, dstBytesPerRow, colorSpace,
+        kCGImageAlphaNoneSkipLast | kCGBitmapByteOrder32Big  // byte order: R, G, B, X
+    );
+
+    CGContextSetInterpolationQuality(dstCtx, kCGInterpolationMedium);
+    CGContextDrawImage(dstCtx, CGRectMake(0, 0, targetWidth, targetHeight), srcImage);
+
+    CGImageRelease(srcImage);
+    CGContextRelease(dstCtx);
+    CGColorSpaceRelease(colorSpace);
+
+    // Done with the pixel buffer
+    CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
+
+    // --- Pack pixels as 0x00RRGGBB floats for EdgeImpulse DSP ---
+    // The EdgeImpulse image DSP block expects one float per pixel, where each
+    // float is a uint32 cast: (R << 16) | (G << 8) | B.
+    // Signal total_length = number of pixels = width * height.
+    size_t pixelCount = targetWidth * targetHeight;  // 48400
+    float *features = (float *)malloc(pixelCount * sizeof(float));
+
+    for (size_t i = 0; i < pixelCount; i++) {
+        uint8_t r = resizedData[i * 4 + 0];
+        uint8_t g = resizedData[i * 4 + 1];
+        uint8_t b = resizedData[i * 4 + 2];
+        features[i] = (float)((uint32_t)(r << 16) | (uint32_t)(g << 8) | (uint32_t)b);
+    }
+
+    free(resizedData);
+
+    // --- Create EdgeImpulse signal ---
     signal_t signal;
-    signal.total_length = featureCount;
+    signal.total_length = pixelCount;  // Must be EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE (48400)
     signal.get_data = [features](size_t offset, size_t length, float *out_ptr) -> int {
         memcpy(out_ptr, features + offset, length * sizeof(float));
         return 0;
     };
 
-    // Run classifier
+    // --- Run classifier ---
     ei_impulse_result_t result = {0};
     EI_IMPULSE_ERROR res = run_classifier(&signal, &result, false);
 
     free(features);
-    CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
 
     if (res != EI_IMPULSE_OK) {
-        NSLog(@"Classification failed: %d", res);
+        NSLog(@"Classification failed with error: %d", res);
         return @{};
     }
 
-    // Parse results into dictionary
+    // --- Parse results into dictionary ---
     NSMutableDictionary *predictions = [NSMutableDictionary dictionary];
     for (size_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
         NSString *label = [NSString stringWithUTF8String:result.classification[i].label];
