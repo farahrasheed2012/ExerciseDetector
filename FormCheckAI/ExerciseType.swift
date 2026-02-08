@@ -6,6 +6,16 @@ enum ExerciseType: String, CaseIterable, Codable {
     case lunge = "Lunge"
     case unknown = "Unknown"
 
+    /// Map Edge Impulse model output labels to ExerciseType (e.g. "arm_raise" -> .armRaise).
+    static func fromModelLabel(_ label: String) -> ExerciseType? {
+        switch label.lowercased() {
+        case "arm_raise": return .armRaise
+        case "lunge": return .lunge
+        case "standing": return .standing
+        default: return nil
+        }
+    }
+
     var color: Color {
         switch self {
         case .armRaise: return .blue

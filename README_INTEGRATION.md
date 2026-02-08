@@ -4,11 +4,12 @@
 This app uses an EdgeImpulse C++ vision model located at:
 `/Users/farah/Documents/FarahRasheed/ExerciseDetector`
 
-The model detects three exercise classes: **Arm Raise**, **Standing**, and **Lunge**.
+The model detects two exercise classes: **arm_raise** and **lunge** (mapped in-app to Arm Raise and Lunge; “Standing” is used as the rest state when neither is confident).
 
-- **Input size:** 220 x 220 pixels (RGB)
-- **Output:** 3 classification labels with confidence scores
+- **Input size:** 224 x 224 pixels (RGB)
+- **Output:** 2 classification labels with confidence scores
 - **Inference type:** TFLite (compiled, float32)
+- **Project:** soha-cience-fair-project-2026 (ID 885664)
 
 ---
 
@@ -76,7 +77,18 @@ Click on your **project** (FormCheckAI) in the navigator, select the **FormCheck
 3. Clean build folder: **Product > Clean Build Folder** (Cmd+Shift+K)
 4. Build: **Product > Build** (Cmd+B)
 
-### 5. Test on Real Device
+### 5. Updating to a New Edge Impulse Model (from ExerciseDetector)
+
+When you export a new model to ExerciseDetector:
+
+1. Copy into `FormCheckAI/FormCheckAI/`:
+   - `ExerciseDetector/model-parameters/*` → `FormCheckAI/FormCheckAI/model-parameters/`
+   - `ExerciseDetector/tflite-model/*` → `FormCheckAI/FormCheckAI/tflite-model/`
+2. In Xcode, if the compiled model filename changed (e.g. `tflite_learn_885664_3_compiled.cpp`), update the project: remove the old .cpp from the target’s Compile Sources and add the new one from the `tflite-model` group.
+3. If the model’s output labels changed, update `ExerciseType.fromModelLabel(_:)` in `ExerciseType.swift` to map the new label strings to the correct cases.
+4. (Optional) If the Edge Impulse SDK version changed, replace `FormCheckAI/FormCheckAI/edge-impulse-sdk/` with the one from ExerciseDetector.
+
+### 6. Test on Real Device
 
 **Important:** This app requires a real iPhone -- the simulator does not have a camera.
 

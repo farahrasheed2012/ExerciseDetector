@@ -157,10 +157,14 @@ extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         for (label, value) in predictions {
             let conf = value.doubleValue
-            if conf > topConfidence {
+            if conf > topConfidence, let exercise = ExerciseType.fromModelLabel(label) {
                 topConfidence = conf
-                topExercise = ExerciseType(rawValue: label) ?? .unknown
+                topExercise = exercise
             }
+        }
+        // If no recognized label above threshold, treat as standing (rest/neutral)
+        if topExercise == .unknown && topConfidence < 0.5 {
+            topExercise = .standing
         }
 
         DispatchQueue.main.async { [weak self] in
